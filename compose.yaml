@@ -1,8 +1,11 @@
+x-common-env: &common-env
+  env_file:
+    - .env            # path is relative to the compose file
+
 services:
   db:
+    <<: *common-env
     build: ./db
-    env_file:
-      - ./db/.env
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -10,29 +13,23 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    networks:
-      - backend
+    networks: [backend]
 
   api:
+    <<: *common-env
     build: ./api
-    env_file:
-      - ./api/.env
-    # no "ports:" anymore, only the proxy is exposed to the host
     depends_on:
       db:
         condition: service_healthy
-    networks:
-      - frontend
-      - backend
+    networks: [frontend, backend]
 
   proxy:
+    <<: *common-env
     build: ./proxy
     ports:
-      - "8080:8080"
-    depends_on:
-      - api
-    networks:
-      - frontend
+      - "${PROXY_PORT:-8080}:8080"   # interpolated from root .env
+    depends_on: [api]
+    networks: [frontend]
 
 networks:
   frontend:
