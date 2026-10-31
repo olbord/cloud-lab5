@@ -1,0 +1,43 @@
+services:
+  db:
+    build: ./db
+    env_file:
+      - ./db/.env
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - backend
+
+  api:
+    build: ./api
+    env_file:
+      - ./api/.env
+    # no "ports:" anymore, only the proxy is exposed to the host
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+
+  proxy:
+    build: ./proxy
+    ports:
+      - "8080:8080"
+    depends_on:
+      - api
+    networks:
+      - frontend
+
+networks:
+  frontend:
+  backend:
+    internal: true   # optional: no outbound internet access for api/db via this network
+
+volumes:
+  db_data:

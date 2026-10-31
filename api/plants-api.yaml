@@ -1,0 +1,117 @@
+openapi: 3.1.0
+info:
+  title: Plants API
+  version: "1.0"
+  description: >
+    ITI8801 assignment 5, the API for student code 244053IAIB. Implement exactly
+    this: the paths, methods, status codes, field names and types. The
+    validator checks your service against this document.
+servers:
+  - url: http://localhost
+    description: your service, on the port it listens on
+security: []
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: The service is up and can reach its database
+      responses:
+        "200":
+          description: Up, and the database answers
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: Up, but the database does not answer
+  /api/plants:
+    get:
+      operationId: listPlants
+      summary: All plants, or those with exactly this name
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: The plants, in the order they were created
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Plant" }
+    post:
+      operationId: createPlant
+      summary: Create a plant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewPlant" }
+      responses:
+        "201":
+          description: The created plant, with the id the service assigned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Plant" }
+        "400":
+          description: The body is not a valid NewPlant
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/plants/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    get:
+      operationId: getPlant
+      summary: One plant
+      responses:
+        "200":
+          description: The plant
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Plant" }
+        "404":
+          description: No plant with this id, or the id is not a positive integer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      operationId: deletePlant
+      summary: Delete a plant
+      responses:
+        "204":
+          description: Deleted; no body
+        "404":
+          description: No plant with this id
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+components:
+  schemas:
+    NewPlant:
+      type: object
+      required: [name, heightCm]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, pattern: "^[^\\u0000]*$", description: "no zero bytes: PostgreSQL cannot store them" }
+        heightCm: { type: integer, minimum: 0, maximum: 1000000, description: "height in centimetres" }
+    Plant:
+      type: object
+      required: [id, name, heightCm]
+      properties:
+        id: { type: integer, minimum: 1 }
+        name: { type: string }
+        heightCm: { type: integer, minimum: 0 }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, const: ok }
