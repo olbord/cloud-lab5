@@ -1,3 +1,9 @@
 node_modules/
 .env
 *.http
+*.tfvars
+*.pem
+.terraform/
+*.zip
+*.tfstate
+*.tfstate.*
