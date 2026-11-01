@@ -19,13 +19,15 @@ app.get('/health', async (req, res) => {
 app.get('/api/plants', async (req, res) => {
     const { name } = req.query;
 
-    let sql = 'SELECT * FROM "Plant"';
+    let sql = 'SELECT id, name, height_cm AS "heightCm" FROM "Plant"';
     const params = [];
 
     if (typeof name === 'string' && name.trim() !== '') {
         sql += ' WHERE name ILIKE $1';
         params.push(`%${name.trim()}%`);
     }
+
+    sql += ' ORDER BY id';
 
     const { rows } = await pool.query(sql, params);
     res.status(200).json(rows);
