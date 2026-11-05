@@ -89,6 +89,13 @@ app.delete('/api/plants/:id', async (req, res) => {
     res.status(204).end();
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
     console.log(`API running on port ${PORT}`);
-})
+
+    try {
+        const res = await fetch(`http://localhost:${PORT}/health`);
+        console.log(`Self-check /health -> ${res.status} ${await res.text()}`);
+    } catch (err) {
+        console.error('Self-check failed:', err.message);
+    }
+});
