@@ -27,7 +27,7 @@ services:
     <<: *common-env
     build: ./proxy
     ports:
-      - "${PROXY_PORT:-8080}:8080"   # interpolated from root .env
+      - "${PROXY_PORT:-80}:80"   # interpolated from root .env
     depends_on: [api]
     networks: [frontend]
 
