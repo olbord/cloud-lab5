@@ -37,19 +37,16 @@ app.post('/api/plants', async (req, res) => {
     const body = req.body;
 
     if (body === null || typeof body !== 'object' || Array.isArray(body)) {
-        // body empty
         return res.status(400).json({ error: 'no req body'});
     }
 
     const { name, heightCm } = body;
 
     if (typeof name !== 'string' || name.length < 1 || name.length > 100 || name.includes('\u0000')) {
-        // name invalid
         return res.status(400).json({ error: 'name must be a string of 1-100 characters' });
     }
 
     if (!Number.isInteger(heightCm) || heightCm < 0 || heightCm > 1000000) {
-        // number is invalid
         return res.status(400).json({ error: 'heightCm must be an integer between 0 and 1000000' });
     }
 
@@ -61,6 +58,7 @@ app.post('/api/plants', async (req, res) => {
         res.status(201).json(rows[0]);
     } catch (err) {
         console.error(err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -91,13 +89,18 @@ app.delete('/api/plants/:id', async (req, res) => {
     res.status(204).end();
 });
 
-app.listen(PORT, '0.0.0.0', async () => {
-    console.log(`API running on port ${PORT}`);
+// Only listen if this file is run directly (not required by Jest tests)
+if (require.main === module) {
+    app.listen(PORT, '0.0.0.0', async () => {
+        console.log(`API running on port ${PORT}`);
 
-    try {
-        const res = await fetch(`http://localhost:${PORT}/health`);
-        console.log(`Self-check /health -> ${res.status} ${await res.text()}`);
-    } catch (err) {
-        console.error('Self-check failed:', err.message);
-    }
-});
+        try {
+            const res = await fetch(`http://localhost:${PORT}/health`);
+            console.log(`Self-check /health -> ${res.status} ${await res.text()}`);
+        } catch (err) {
+            console.error('Self-check failed:', err.message);
+        }
+    });
+}
+
+module.exports = { app, pool };
