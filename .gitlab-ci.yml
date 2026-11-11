@@ -1,0 +1,117 @@
+stages:
+  - test
+  - build
+  - scan
+  - deploy
+
+variables:
+  IMAGE_NAME: ghcr.io/$GHCR_USERNAME/lab5-api
+
+test:api:
+  stage: test
+  image: node:22-alpine
+
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+
+  variables:
+    POSTGRES_DB: plants_test
+    POSTGRES_USER: plants
+    POSTGRES_PASSWORD: plants
+    DATABASE_URL: postgres://plants:plants@postgres:5432/plants_test
+    NPM_CONFIG_CACHE: $CI_PROJECT_DIR/.npm
+
+  cache:
+    key:
+      files:
+        - api/package-lock.json
+    paths:
+      - .npm/
+
+  before_script:
+    - cd api
+    - npm ci --prefer-offline
+
+  script:
+    - npm test
+
+build:api:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+
+  before_script:
+    - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+  script:
+    - IMAGE=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+    - docker build -t "$IMAGE:$CI_COMMIT_SHORT_SHA" ./api
+    - docker push "$IMAGE:$CI_COMMIT_SHORT_SHA"
+
+  after_script:
+    - docker logout ghcr.io
+
+scan:api:
+  stage: scan
+  image:
+    name: aquasec/trivy:0.58.1
+    entrypoint: [""]
+
+  variables:
+    TRIVY_CACHE_DIR: $CI_PROJECT_DIR/.trivycache
+    TRIVY_NO_PROGRESS: "true"
+
+  cache:
+    key: trivy-db
+    paths:
+      - .trivycache/
+
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+
+  script:
+    - IMAGE=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+    - trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$IMAGE:$CI_COMMIT_SHORT_SHA"
+
+.deploy:
+  stage: deploy
+  image:
+    name: alpine/k8s:1.31.3
+    entrypoint: [""]
+  script:
+    - IMAGE=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+    - cd k8s/overlays/$DEPLOY_ENV
+    - kustomize edit set image "$IMAGE=$IMAGE:$CI_COMMIT_SHORT_SHA"
+    - kubectl apply -k .
+    - kubectl -n $DEPLOY_ENV rollout status statefulset/db --timeout=180s
+    - kubectl -n $DEPLOY_ENV rollout status deployment/api --timeout=180s
+
+deploy-dev:
+  extends: .deploy
+  variables:
+    DEPLOY_ENV: dev
+  environment:
+    name: dev
+    url: http://244053iaib-dev.k8s.digivader.com
+  resource_group: dev
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+
+deploy-staging:
+  extends: .deploy
+  variables:
+    DEPLOY_ENV: staging
+  environment:
+    name: staging
+    url: http://244053iaib-staging.k8s.digivader.com
+  resource_group: staging
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG
