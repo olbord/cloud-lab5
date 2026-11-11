@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const request = require('supertest');
-const { app, pool } = require('../server');
+const { app, pool } = require('../index');
 
 const add = async (name, heightCm) =>
     (await request(app).post('/api/plants').send({ name, heightCm })).body;
