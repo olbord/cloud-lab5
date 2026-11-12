@@ -7,7 +7,7 @@ stages:
 variables:
   IMAGE_NAME: ghcr.io/$GHCR_USERNAME/lab5-api
 
-test:api:
+test:
   stage: test
   image: node:22-alpine
 
@@ -57,7 +57,7 @@ build:
   after_script:
     - docker logout ghcr.io
 
-scan:api:
+scan:
   stage: scan
   image:
     name: aquasec/trivy:0.58.1

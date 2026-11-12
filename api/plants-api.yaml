@@ -115,3 +115,4 @@ components:
       required: [status]
       properties:
         status: { type: string, const: ok }
+
