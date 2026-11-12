@@ -89,8 +89,8 @@ scan:api:
       - cd k8s/overlays/$DEPLOY_ENV
       - kustomize edit set image "$IMAGE=$IMAGE:$CI_COMMIT_SHORT_SHA"
       - kubectl apply -k .
-      - kubectl -n 244053iaib-&DEPLOY_ENV wait --for=condition=ready pod -l app=db --timeout=180s
-      - kubectl -n 244053iaib-&DEPLOY_ENV rollout status deployment/api --timeout=180s
+      - kubectl -n "244053iaib-${DEPLOY_ENV}" wait --for=condition=ready pod -l app=db --timeout=180s
+      - kubectl -n "244053iaib-${DEPLOY_ENV}" rollout status deployment/api --timeout=180s
 deploy-dev:
   extends: .deploy
   variables:
