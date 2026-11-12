@@ -90,7 +90,7 @@ scan:api:
     - export HOST="244053iaib-$ENV.k8s.digivader.com"
     # old unsuffixed resources from the previous kustomize setup (safe to delete this line after one green run)
     - kubectl delete deployment/api service/api ingress/api statefulset/db service/db --ignore-not-found || true
-    - kubectl create secret generic "db-$ENV" --from-literal=password="${DB_PASSWORD:?DB_PASSWORD CI variable is not set}" --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl create secret generic "db-$ENV" --from-literal=password="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')" || echo "secret db-$ENV already exists, keeping it"
     - for f in k8s/*.yaml; do envsubst '$ENV $HOST $IMAGE $DB_IMAGE $REPLICAS' < $f | kubectl apply -f -; done
     - kubectl rollout status deployment/api-$ENV --timeout=300s
 
