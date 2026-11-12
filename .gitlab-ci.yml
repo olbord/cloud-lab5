@@ -85,12 +85,11 @@ scan:api:
     name: alpine/k8s:1.31.3
     entrypoint: [""]
   script:
-  - IMAGE=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
-  - cd k8s/overlays/$DEPLOY_ENV
-  - kustomize edit set image "$IMAGE=$IMAGE:$CI_COMMIT_SHORT_SHA"
-  - kubectl apply -k .
-  - kubectl -n "244053iaib-${DEPLOY_ENV}" rollout status statefulset/db --timeout=180s
-  - kubectl -n "244053iaib-${DEPLOY_ENV}" rollout status deployment/api --timeout=180s
+    - IMAGE=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+    - cd k8s/overlays/$DEPLOY_ENV
+    - kustomize edit set image "$IMAGE=$IMAGE:$CI_COMMIT_SHORT_SHA"
+    - kubectl apply -k .
+    - kubectl rollout status deployment/api --timeout=180s
 
 deploy-dev:
   extends: .deploy
