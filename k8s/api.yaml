@@ -1,32 +1,35 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: db
+  name: db-$ENV
 spec:
   clusterIP: None
   selector:
     app: db
+    env: $ENV
   ports:
     - port: 5432
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: db
+  name: db-$ENV
 spec:
-  serviceName: db
+  serviceName: db-$ENV
   replicas: 1
   selector:
     matchLabels:
       app: db
+      env: $ENV
   template:
     metadata:
       labels:
         app: db
+        env: $ENV
     spec:
       containers:
         - name: postgres
-          image: ghcr.io/olbord/lab5-db:$CI_COMMIT_SHORT_SHA
+          image: $DB_IMAGE
           env:
             - name: POSTGRES_USER
               value: app
@@ -34,7 +37,7 @@ spec:
               value: appdb
             - name: POSTGRES_PASSWORD
               valueFrom:
-                secretKeyRef: {name: db, key: password}
+                secretKeyRef: {name: db-$ENV, key: password}
           ports:
             - containerPort: 5432
           readinessProbe:
