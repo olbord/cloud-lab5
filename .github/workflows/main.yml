@@ -1,0 +1,197 @@
+name: CI/CD
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+
+permissions:
+  contents: read
+
+env:
+  API_IMAGE_NAME: lab5-api
+  DB_IMAGE_NAME: lab5-db
+
+jobs:
+  # test
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: plants_test
+          POSTGRES_USER: plants
+          POSTGRES_PASSWORD: plants
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U plants -d plants_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      POSTGRES_DB: plants_test
+      POSTGRES_USER: plants
+      POSTGRES_PASSWORD: plants
+      DATABASE_URL: postgres://plants:plants@localhost:5432/plants_test
+
+    defaults:
+      run:
+        working-directory: api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - run: npm ci --prefer-offline
+
+      - run: npm test
+
+  # build
+  # Skipped on tag pushes (the image for that commit was built on the branch push)
+  build:
+    needs: test
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute variables
+        run: |
+          echo "SHORT_SHA=${GITHUB_SHA::8}" >> "$GITHUB_ENV"
+          echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push db image
+        run: |
+          DB_IMAGE="ghcr.io/$OWNER/$DB_IMAGE_NAME:$SHORT_SHA"
+          docker build -t "$DB_IMAGE" ./db
+          docker push "$DB_IMAGE"
+
+      - name: Build and push api image
+        run: |
+          IMAGE="ghcr.io/$OWNER/$API_IMAGE_NAME:$SHORT_SHA"
+          docker build -t "$IMAGE" ./api
+          docker push "$IMAGE"
+
+      - name: Logout
+        if: always()
+        run: docker logout ghcr.io
+
+  # scan
+  scan:
+    needs: [test, build]
+    # run even when build was skipped (tag pushes), but not if it failed
+    if: ${{ !cancelled() && needs.test.result == 'success' && needs.build.result != 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+
+    env:
+      TRIVY_CACHE_DIR: ${{ github.workspace }}/.trivycache
+      TRIVY_NO_PROGRESS: "true"
+
+    steps:
+      - name: Compute variables
+        run: |
+          echo "SHORT_SHA=${GITHUB_SHA::8}" >> "$GITHUB_ENV"
+          echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+
+      - uses: actions/cache@v4
+        with:
+          path: .trivycache
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: trivy-db-
+
+      - name: Trivy scan
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p "$TRIVY_CACHE_DIR"
+          docker run --rm \
+            -e TRIVY_USERNAME -e TRIVY_PASSWORD -e TRIVY_NO_PROGRESS \
+            -e TRIVY_CACHE_DIR=/trivycache \
+            -v "$TRIVY_CACHE_DIR:/trivycache" \
+            aquasec/trivy:0.58.1 image \
+              --severity HIGH,CRITICAL \
+              --ignore-unfixed \
+              --exit-code 1 \
+              "ghcr.io/$OWNER/$API_IMAGE_NAME:$SHORT_SHA"
+
+  # deploy
+  deploy:
+    needs: scan
+    if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: deploy-${{ github.ref_type == 'tag' && 'staging' || 'dev' }}
+      cancel-in-progress: false
+
+    environment:
+      name: ${{ github.ref_type == 'tag' && 'staging' || 'dev' }}
+      url: http://244053iaib-${{ github.ref_type == 'tag' && 'staging' || 'dev' }}.k8s.digivader.com
+
+    env:
+      ENV: ${{ github.ref_type == 'tag' && 'staging' || 'dev' }}
+      REPLICAS: ${{ github.ref_type == 'tag' && '2' || '1' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.31.3
+
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBE_CONFIG" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Compute variables
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          SHORT_SHA="${GITHUB_SHA::8}"
+          echo "IMAGE=ghcr.io/$OWNER/$API_IMAGE_NAME:$SHORT_SHA" >> "$GITHUB_ENV"
+          echo "DB_IMAGE=ghcr.io/$OWNER/$DB_IMAGE_NAME:$SHORT_SHA" >> "$GITHUB_ENV"
+          echo "HOST=244053iaib-$ENV.k8s.digivader.com" >> "$GITHUB_ENV"
+
+      - name: Remove legacy resources
+        run: kubectl delete deployment/api service/api ingress/api statefulset/db service/db --ignore-not-found || true
+
+      - name: Create DB secret if missing
+        run: |
+          kubectl create secret generic "db-$ENV" \
+            --from-literal=password="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')" \
+            || echo "secret db-$ENV already exists, keeping it"
+
+      - name: Apply manifests
+        run: |
+          for f in k8s/*.yaml; do
+            envsubst '$ENV $HOST $IMAGE $DB_IMAGE $REPLICAS' < "$f" | kubectl apply -f -
+          done
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/api-$ENV --timeout=300s
