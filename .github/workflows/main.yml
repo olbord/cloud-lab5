@@ -140,7 +140,7 @@ jobs:
   # deploy
   deploy:
     needs: scan
-    if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
+    if: ${{ !cancelled() && needs.scan.result == 'success' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag') }}
     runs-on: ubuntu-latest
 
     concurrency:
